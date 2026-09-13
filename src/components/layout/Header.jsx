@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Bell, Building2, User } from 'lucide-react';
+import { Bell, Building2, User, Menu } from 'lucide-react';
 import { FACTORY_INFO } from '../../data/mockData';
 
 const PAGE_TITLES = {
@@ -30,7 +30,7 @@ const PAGE_TITLES = {
   }
 };
 
-export default function Header() {
+export default function Header({ onToggleMobileMenu = () => {} }) {
   const location = useLocation();
   const [showNotificationToast, setShowNotificationToast] = useState(false);
 
@@ -39,18 +39,48 @@ export default function Header() {
     subtitle: 'Manufacturing Sustainability Management'
   };
 
+  // Resolve active facility name dynamically
+  const activeFactoryName = (() => {
+    try {
+      const savedResults = localStorage.getItem('ecoloop_emission_results');
+      if (savedResults) {
+        const parsed = JSON.parse(savedResults);
+        if (parsed.factoryName) return parsed.factoryName;
+      }
+      const savedFactory = localStorage.getItem('ecoloop_factory_data');
+      if (savedFactory) {
+        const parsed = JSON.parse(savedFactory);
+        if (parsed.factoryName) return parsed.factoryName;
+      }
+    } catch (e) {
+      // Fallback
+    }
+    return FACTORY_INFO.name;
+  })();
+
   return (
     <header className="top-header">
-      <div className="header-left">
-        <h1 className="header-title">{currentMeta.title}</h1>
-        <p className="header-subtitle">{currentMeta.subtitle}</p>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <button
+          type="button"
+          className="mobile-menu-btn"
+          onClick={onToggleMobileMenu}
+          aria-label="Toggle navigation menu"
+        >
+          <Menu size={20} />
+        </button>
+
+        <div className="header-left">
+          <h1 className="header-title">{currentMeta.title}</h1>
+          <p className="header-subtitle">{currentMeta.subtitle}</p>
+        </div>
       </div>
 
       <div className="header-right">
         {/* Factory name badge */}
-        <div className="factory-badge" title={`Facility ID: ${FACTORY_INFO.facilityId}`}>
+        <div className="factory-badge" title={`Facility ID: ${FACTORY_INFO.facilityId} • ${activeFactoryName}`}>
           <Building2 size={16} />
-          <span>{FACTORY_INFO.name}</span>
+          <span>{activeFactoryName}</span>
         </div>
 
         {/* Notification Icon */}

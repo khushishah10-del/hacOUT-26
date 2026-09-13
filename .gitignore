@@ -1,9 +1,28 @@
+# Dependencies
 node_modules/
 dist/
 
+# Environment configurations & secrets
 .env
 .env.*
+*.env
 
+# Python Virtual Environments
 .venv/
+venv/
+backend/venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

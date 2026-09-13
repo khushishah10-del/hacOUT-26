@@ -80,19 +80,26 @@ export function detectHotspot(emissionResults) {
   // Sort categories from highest emission value to lowest emission value (Requirement 7)
   const topContributors = [...categories].sort((a, b) => b.value - a.value);
 
-  // Highest contributor is the main hotspot
-  const primary = topContributors[0];
+  // Highest contributor is the main hotspot (prioritizing backend hotspot as source of truth if provided)
+  const backendHotspot = emissionResults.hotspot;
+  const hasBackendHotspot = backendHotspot && backendHotspot.category && backendHotspot.category !== "No hotspot";
+
+  const primaryCategory = hasBackendHotspot ? backendHotspot.category : topContributors[0].category;
+  const matched = categories.find(c => c.category.toLowerCase() === primaryCategory.toLowerCase()) || topContributors[0];
+  const primaryValue = hasBackendHotspot && backendHotspot.value !== undefined ? Number(backendHotspot.value) : matched.value;
+  const primaryPercentage = hasBackendHotspot && backendHotspot.percentage !== undefined ? Number(backendHotspot.percentage) : matched.percentage;
 
   return {
-    category: primary.category,
-    value: primary.value,
-    percentage: primary.percentage,
-    scope: primary.scope,
-    icon: primary.icon,
-    color: primary.color,
-    reason: `${primary.category} is currently the largest contributor to the factory's estimated emissions.`,
-    whatThisMeans: `The analysis shows that ${primary.category.toLowerCase()} is currently the largest source of estimated emissions (${primary.percentage}% of total). Reducing ${primary.category.toLowerCase()}-related emissions may provide the greatest potential impact, such as by ${primary.actionText}.`,
+    category: matched.category,
+    value: primaryValue,
+    percentage: primaryPercentage,
+    scope: matched.scope,
+    icon: matched.icon,
+    color: matched.color,
+    reason: `${matched.category} is currently the largest contributor to the factory's estimated emissions.`,
+    whatThisMeans: `The analysis shows that ${matched.category.toLowerCase()} is currently the largest source of estimated emissions (${primaryPercentage}% of total). Reducing ${matched.category.toLowerCase()}-related emissions may provide the greatest potential impact, such as by ${matched.actionText}.`,
     topContributors,
     isZero: false
   };
 }
+

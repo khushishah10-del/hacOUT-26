@@ -258,6 +258,38 @@
   width: 100%;
 }
 
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Spin Animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinning,
+.animate-spin {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+/* Active preset pill styling */
+.preset-btn.active {
+  background-color: var(--primary) !important;
+  color: #ffffff !important;
+  border-color: var(--primary) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
 /* Form Controls */
 .form-section {
   background-color: var(--bg-card);

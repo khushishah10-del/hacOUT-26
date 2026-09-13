@@ -16,10 +16,17 @@ import {
   RotateCcw,
   Sparkles,
   ArrowRight,
-  ClipboardList
+  ClipboardList,
+  Loader2
 } from 'lucide-react';
 import { INITIAL_EMPTY_FORM_DATA, DEFAULT_FACTORY_FORM_DATA } from '../data/mockData';
 import { calculateEmissions } from '../utils/emissionCalculator';
+import {
+  getFactories,
+  createFactory,
+  createFactoryData,
+  calculateEmissions as calculateEmissionsAPI
+} from '../services/api';
 
 export default function FactoryData() {
   const navigate = useNavigate();
@@ -28,6 +35,10 @@ export default function FactoryData() {
   const [formData, setFormData] = useState(INITIAL_EMPTY_FORM_DATA);
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingStep, setSubmittingStep] = useState('');
+  const [apiError, setApiError] = useState('');
+
 
   // Current submitted factory data persisted in localStorage
   const [submittedData, setSubmittedData] = useState(() => {
@@ -170,29 +181,186 @@ export default function FactoryData() {
     return newErrors;
   };
 
-  // Analyze Factory submission handler
-  const handleAnalyzeFactory = (e) => {
+  // Analyze Factory submission handler connected to FastAPI backend
+  const handleAnalyzeFactory = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     const validationErrors = validate();
 
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       setSuccessMessage('');
+      setApiError('');
       return;
     }
 
-    // Form is valid: calculate emissions & persist in React state & localStorage
     setErrors({});
-    const calculated = calculateEmissions(formData);
-    setSubmittedData(formData);
-    setEmissionResults(calculated);
+    setApiError('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+
     try {
-      localStorage.setItem('ecoloop_factory_data', JSON.stringify(formData));
-      localStorage.setItem('ecoloop_emission_results', JSON.stringify(calculated));
+      // STEP 2: Create or reuse factory in MySQL
+      setSubmittingStep('Verifying factory profile with backend...');
+      let factoryId = null;
+
+      const factories = await getFactories();
+      const existing = Array.isArray(factories)
+        ? factories.find((f) => f.name && f.name.toLowerCase().trim() === formData.factoryName.toLowerCase().trim())
+        : null;
+
+      if (existing && existing.id) {
+        factoryId = existing.id;
+      } else {
+        const newFactory = await createFactory({
+          name: formData.factoryName.trim(),
+          location: formData.location.trim(),
+          industry_type: formData.industryType.trim()
+        });
+        factoryId = newFactory.id;
+      }
+
+      // STEP 3: Submit operational factory data to MySQL
+      setSubmittingStep('Saving factory operational data to MySQL...');
+      const dataPayload = {
+        electricity_kwh: Math.max(0, Number(formData.electricityConsumption) || 0),
+        renewable_percentage: Math.min(100, Math.max(0, Number(formData.renewableEnergyPercent) || 0)),
+        fuel_liters: Math.max(0, Number(formData.fuelConsumption) || 0),
+        material_type: formData.materialType?.trim() || null,
+        material_quantity: Math.max(0, Number(formData.materialQuantity) || 0),
+        plastic_waste_kg: Math.max(0, Number(formData.plasticWaste) || 0),
+        metal_waste_kg: Math.max(0, Number(formData.metalWaste) || 0),
+        paper_waste_kg: Math.max(0, Number(formData.paperWaste) || 0),
+        other_waste_kg: Math.max(0, Number(formData.otherWaste) || 0),
+        production_units: Math.max(0, Math.round(Number(formData.productionUnits) || 0)),
+        date: formData.date
+      };
+
+      const createdDataRecord = await createFactoryData(factoryId, dataPayload);
+
+      // STEP 4 & 5: Trigger backend emission calculation & hotspot detection
+      setSubmittingStep('Calculating emissions with EcoLoop backend...');
+      const backendResult = await calculateEmissionsAPI(createdDataRecord.id);
+
+      // STEP 6 & 7: Formulate backend source of truth result
+      const formattedResult = {
+        id: backendResult.id,
+        factoryDataId: backendResult.factory_data_id,
+        factoryId: factoryId,
+        factoryName: formData.factoryName,
+        location: formData.location,
+        industryType: formData.industryType,
+        date: formData.date,
+        productionUnits: Number(formData.productionUnits) || 0,
+        totalCO2: backendResult.total_co2,
+        totalCO2Tons: Number((backendResult.total_co2 / 1000).toFixed(2)),
+        electricityCO2: backendResult.electricity_co2,
+        fuelCO2: backendResult.fuel_co2,
+        materialCO2: backendResult.material_co2,
+        wasteCO2: backendResult.waste_co2,
+        percentages: {
+          electricity: backendResult.percentages.electricity,
+          fuel: backendResult.percentages.fuel,
+          material: backendResult.percentages.material,
+          waste: backendResult.percentages.waste
+        },
+        hotspot: {
+          category: backendResult.hotspot.category,
+          value: backendResult.hotspot.value,
+          percentage: backendResult.hotspot.percentage,
+          isZero: backendResult.total_co2 <= 0 || backendResult.hotspot.category === "No hotspot"
+        },
+        breakdown: [
+          {
+            category: "Electricity",
+            kg: backendResult.electricity_co2,
+            tons: Number((backendResult.electricity_co2 / 1000).toFixed(2)),
+            percentage: backendResult.percentages.electricity,
+            color: "#ef4444",
+            scope: "Scope 2 (Indirect)",
+            description: "Grid electricity consumed across plant equipment, lighting, and HVAC",
+            inputQuantity: Number(formData.electricityConsumption) || 0,
+            inputUnit: "kWh",
+            factor: 0.82
+          },
+          {
+            category: "Fuel",
+            kg: backendResult.fuel_co2,
+            tons: Number((backendResult.fuel_co2 / 1000).toFixed(2)),
+            percentage: backendResult.percentages.fuel,
+            color: "#f97316",
+            scope: "Scope 1 (Direct)",
+            description: "Onsite fuel combustion from boilers, heating, and generators",
+            inputQuantity: Number(formData.fuelConsumption) || 0,
+            inputUnit: "Liters",
+            factor: 2.68
+          },
+          {
+            category: "Material",
+            kg: backendResult.material_co2,
+            tons: Number((backendResult.material_co2 / 1000).toFixed(2)),
+            percentage: backendResult.percentages.material,
+            color: "#8b5cf6",
+            scope: "Scope 3 (Upstream)",
+            description: "Embodied carbon in raw feedstock used in manufacturing",
+            inputQuantity: Number(formData.materialQuantity) || 0,
+            inputUnit: "kg",
+            factor: 0.50
+          },
+          {
+            category: "Waste",
+            kg: backendResult.waste_co2,
+            tons: Number((backendResult.waste_co2 / 1000).toFixed(2)),
+            percentage: backendResult.percentages.waste,
+            color: "#0284c7",
+            scope: "Scope 3 (Downstream)",
+            description: "Landfilled and disposed scrap (plastic, metal, paper, other)",
+            inputQuantity: (Number(formData.plasticWaste) || 0) + (Number(formData.metalWaste) || 0) + (Number(formData.paperWaste) || 0) + (Number(formData.otherWaste) || 0),
+            inputUnit: "kg",
+            factor: "1.00–2.50",
+            subBreakdown: {
+              plastic: { kg: Math.round((Number(formData.plasticWaste) || 0) * 2.5), inputKg: Number(formData.plasticWaste) || 0, factor: 2.5 },
+              metal: { kg: Math.round((Number(formData.metalWaste) || 0) * 1.8), inputKg: Number(formData.metalWaste) || 0, factor: 1.8 },
+              paper: { kg: Math.round((Number(formData.paperWaste) || 0) * 1.0), inputKg: Number(formData.paperWaste) || 0, factor: 1.0 },
+              other: { kg: Math.round((Number(formData.otherWaste) || 0) * 0.9), inputKg: Number(formData.otherWaste) || 0, factor: 0.9 }
+            }
+          }
+
+        ],
+        source: 'backend',
+
+        calculatedAt: backendResult.created_at || new Date().toLocaleString()
+      };
+
+      setSubmittedData(formData);
+      setEmissionResults(formattedResult);
+
+      try {
+        localStorage.setItem('ecoloop_factory_data', JSON.stringify(formData));
+        localStorage.setItem('ecoloop_emission_results', JSON.stringify(formattedResult));
+        localStorage.setItem('ecoloop_backend_result', JSON.stringify(backendResult));
+      } catch (storageErr) {
+        console.error('Failed to cache in localStorage:', storageErr);
+      }
+
+      setSuccessMessage(`Factory data saved to MySQL database successfully. Backend Estimated Total Emissions: ${backendResult.total_co2.toLocaleString()} kg CO2e (${formattedResult.totalCO2Tons} tons CO2e). Primary Hotspot: ${backendResult.hotspot.category} (${backendResult.hotspot.percentage}%).`);
     } catch (err) {
-      console.error('Failed to save to localStorage:', err);
+      console.error('Backend submission error:', err);
+      const errMsg = err.message || '';
+      if (errMsg.includes('connect') || errMsg.includes('Failed to fetch')) {
+        setApiError('Unable to connect to EcoLoop API. Please make sure the backend server is running.');
+      } else if (errMsg.includes('data')) {
+        setApiError('Unable to save factory data.');
+      } else if (errMsg.includes('emission')) {
+        setApiError('Unable to calculate emissions.');
+      } else {
+        setApiError(errMsg || 'An error occurred during backend processing.');
+      }
+    } finally {
+      setIsSubmitting(false);
+      setSubmittingStep('');
     }
-    setSuccessMessage(`Factory data submitted successfully. Estimated Total Emissions: ${calculated.totalCO2.toLocaleString()} kg CO2e (${calculated.totalCO2Tons} tons CO2e).`);
   };
 
   // Reset handler - clears all inputs and errors
@@ -200,6 +368,7 @@ export default function FactoryData() {
     setFormData(INITIAL_EMPTY_FORM_DATA);
     setErrors({});
     setSuccessMessage('');
+    setApiError('');
   };
 
   // Helper to load sample data for rapid testing
@@ -207,7 +376,9 @@ export default function FactoryData() {
     setFormData(DEFAULT_FACTORY_FORM_DATA);
     setErrors({});
     setSuccessMessage('');
+    setApiError('');
   };
+
 
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
@@ -256,7 +427,7 @@ export default function FactoryData() {
                 {successMessage}
               </h4>
               <p style={{ margin: '0.2rem 0 0', color: '#047857', fontSize: '0.82rem' }}>
-                Parameters saved to local storage for Phase 2 carbon intelligence and circular alternatives.
+                Parameters persisted in MySQL database and verified with backend emission calculation engine.
               </p>
             </div>
           </div>
@@ -271,6 +442,34 @@ export default function FactoryData() {
           </button>
         </div>
       )}
+
+      {/* Backend API Error Banner */}
+      {apiError && (
+        <div
+          style={{
+            backgroundColor: '#fef2f2',
+            border: '1px solid #f87171',
+            borderRadius: 'var(--radius-lg)',
+            padding: '1rem 1.5rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.85rem',
+            color: '#991b1b',
+            boxShadow: 'var(--shadow-sm)'
+          }}
+        >
+          <AlertCircle size={22} style={{ flexShrink: 0, color: '#dc2626', marginTop: '2px' }} />
+          <div>
+            <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700 }}>Connection / Submission Error</h4>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.88rem', lineHeight: 1.4 }}>{apiError}</p>
+            <span style={{ fontSize: '0.78rem', color: '#b91c1c', display: 'block', marginTop: '0.35rem', fontWeight: 500 }}>
+              Your entered parameters have been retained in the form. Please make sure the backend server is active and try again.
+            </span>
+          </div>
+        </div>
+      )}
+
 
       {/* Validation Warning Banner if there are errors */}
       {Object.keys(errors).length > 0 && (
@@ -682,15 +881,34 @@ export default function FactoryData() {
           <button
             type="submit"
             className="btn btn-primary"
-            style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}
+            disabled={isSubmitting}
+            style={{
+              padding: '0.85rem 2rem',
+              fontSize: '1rem',
+              opacity: isSubmitting ? 0.75 : 1,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.6rem'
+            }}
           >
-            <Sparkles size={18} />
-            <span>Analyze Factory</span>
+            {isSubmitting ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>{submittingStep || 'Processing with backend...'}</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={18} />
+                <span>Analyze Factory</span>
+              </>
+            )}
           </button>
 
           <button
             type="button"
             className="btn btn-secondary"
+            disabled={isSubmitting}
             onClick={handleReset}
             style={{ padding: '0.85rem 1.75rem', fontSize: '0.95rem' }}
           >
@@ -698,6 +916,7 @@ export default function FactoryData() {
             <span>Reset</span>
           </button>
         </div>
+
       </form>
 
       {/* CURRENT FACTORY DATA SUMMARY CARD / TABLE */}

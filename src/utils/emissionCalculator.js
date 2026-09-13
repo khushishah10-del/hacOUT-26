@@ -20,8 +20,9 @@ export const DEMO_EMISSION_FACTORS = {
   wastePlastic: 2.50, // kg CO2e per kg
   wasteMetal: 1.80,   // kg CO2e per kg
   wastePaper: 1.00,   // kg CO2e per kg
-  wasteOther: 1.20    // kg CO2e per kg
+  wasteOther: 0.90    // kg CO2e per kg
 };
+
 
 /**
  * Calculates estimated greenhouse gas emissions based on factory operational inputs.

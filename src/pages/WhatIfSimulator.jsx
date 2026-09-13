@@ -29,15 +29,35 @@ export default function WhatIfSimulator() {
   const [renewableEnergy, setRenewableEnergy] = useState(15);
   const [recycledMaterial, setRecycledMaterial] = useState(10);
   const [wasteRecovery, setWasteRecovery] = useState(20);
+  const [activePreset, setActivePreset] = useState('baseline');
+
+  // Resolve active facility name dynamically
+  const activeFactoryName = (() => {
+    try {
+      const savedResults = localStorage.getItem('ecoloop_emission_results');
+      if (savedResults) {
+        const parsed = JSON.parse(savedResults);
+        if (parsed.factoryName) return parsed.factoryName;
+      }
+      const savedFactory = localStorage.getItem('ecoloop_factory_data');
+      if (savedFactory) {
+        const parsed = JSON.parse(savedFactory);
+        if (parsed.factoryName) return parsed.factoryName;
+      }
+    } catch (e) {
+      // Fallback
+    }
+    return 'Industrial Facility';
+  })();
 
   // Calculate simulation outcomes dynamically
-  // Note: calculateSimulatedEmissions is structured so it can be swapped with an API call or backend engine
   const simulation = useMemo(() => {
     return calculateSimulatedEmissions(renewableEnergy, recycledMaterial, wasteRecovery);
   }, [renewableEnergy, recycledMaterial, wasteRecovery]);
 
   // Presets for quick hackathon presentation / testing
   const applyPreset = (preset) => {
+    setActivePreset(preset);
     switch (preset) {
       case 'baseline':
         setRenewableEnergy(15);
@@ -82,7 +102,7 @@ export default function WhatIfSimulator() {
       <div className="page-intro">
         <h2 className="page-intro-title">What-If Decarbonization Simulator</h2>
         <p className="page-intro-desc">
-          Dynamically simulate plant-wide carbon reduction by tuning renewable energy adoption, circular material substitution, and industrial scrap recovery.
+          Dynamically simulate plant-wide carbon reduction for <strong>{activeFactoryName}</strong> by tuning renewable energy adoption, circular material substitution, and industrial scrap recovery.
         </p>
       </div>
 
@@ -112,16 +132,32 @@ export default function WhatIfSimulator() {
                   Quick Scenario Presets:
                 </span>
                 <div className="preset-pills">
-                  <button type="button" className="preset-btn" onClick={() => applyPreset('baseline')}>
+                  <button
+                    type="button"
+                    className={`preset-btn ${activePreset === 'baseline' ? 'active' : ''}`}
+                    onClick={() => applyPreset('baseline')}
+                  >
                     Baseline (15%)
                   </button>
-                  <button type="button" className="preset-btn" onClick={() => applyPreset('renewable')}>
+                  <button
+                    type="button"
+                    className={`preset-btn ${activePreset === 'renewable' ? 'active' : ''}`}
+                    onClick={() => applyPreset('renewable')}
+                  >
                     ⚡ Clean Power (80%)
                   </button>
-                  <button type="button" className="preset-btn" onClick={() => applyPreset('circular')}>
+                  <button
+                    type="button"
+                    className={`preset-btn ${activePreset === 'circular' ? 'active' : ''}`}
+                    onClick={() => applyPreset('circular')}
+                  >
                     🔄 Circular (75%)
                   </button>
-                  <button type="button" className="preset-btn" onClick={() => applyPreset('netzero')}>
+                  <button
+                    type="button"
+                    className={`preset-btn ${activePreset === 'netzero' ? 'active' : ''}`}
+                    onClick={() => applyPreset('netzero')}
+                  >
                     🌱 Aggressive Sprint
                   </button>
                 </div>
@@ -141,7 +177,10 @@ export default function WhatIfSimulator() {
                   min="0"
                   max="100"
                   value={renewableEnergy}
-                  onChange={(e) => setRenewableEnergy(Number(e.target.value))}
+                  onChange={(e) => {
+                    setRenewableEnergy(Number(e.target.value));
+                    setActivePreset('custom');
+                  }}
                   className="slider-input"
                 />
                 <div className="slider-bounds">
@@ -164,7 +203,10 @@ export default function WhatIfSimulator() {
                   min="0"
                   max="100"
                   value={recycledMaterial}
-                  onChange={(e) => setRecycledMaterial(Number(e.target.value))}
+                  onChange={(e) => {
+                    setRecycledMaterial(Number(e.target.value));
+                    setActivePreset('custom');
+                  }}
                   className="slider-input"
                 />
                 <div className="slider-bounds">
@@ -187,7 +229,10 @@ export default function WhatIfSimulator() {
                   min="0"
                   max="100"
                   value={wasteRecovery}
-                  onChange={(e) => setWasteRecovery(Number(e.target.value))}
+                  onChange={(e) => {
+                    setWasteRecovery(Number(e.target.value));
+                    setActivePreset('custom');
+                  }}
                   className="slider-input"
                 />
                 <div className="slider-bounds">
@@ -218,7 +263,7 @@ export default function WhatIfSimulator() {
                 ↓ {simulation.tonsSaved} tons CO2 saved (-{simulation.percentageReduced}%)
               </span>
               <span style={{ fontSize: '0.85rem', color: '#6ee7b7', marginTop: '0.25rem' }}>
-                Est. Financial Savings: ~${simulation.financialSavings.toLocaleString()} / year
+                Est. Financial Savings: ~₹{(simulation.financialSavings * 83).toLocaleString('en-IN')} (~${simulation.financialSavings.toLocaleString()}) / year
               </span>
             </div>
           </div>
@@ -236,9 +281,11 @@ export default function WhatIfSimulator() {
                   layout="vertical"
                   margin={{ top: 15, right: 30, left: 40, bottom: 5 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                  <XAxis type="number" stroke="#94a3b8" domain={[0, 1400]} />
-                  <YAxis type="category" dataKey="name" stroke="#64748b" tickLine={false} width={130} />
+                  <XAxis
+                    type="number"
+                    stroke="#94a3b8"
+                    domain={[0, Math.max(120, Math.ceil(simulation.baselineTotal * 1.2))]}
+                  />
                   <Tooltip
                     formatter={(val) => [`${val} tons CO2`, 'Emissions']}
                   />

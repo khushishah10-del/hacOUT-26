@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Sparkles,
@@ -19,15 +19,17 @@ import {
   Lightbulb,
   Target,
   BarChart3,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
+  Loader2,
+  Calendar,
+  Award
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
-import { calculateEmissions } from '../utils/emissionCalculator';
-import { detectHotspot } from '../utils/hotspotDetector';
-import { getRecommendation } from '../utils/recommendationEngine';
+import { getFactoryRecommendations, getFactories } from '../services/api';
 
 /**
- * Returns icon, color, and background matching the category
+ * Returns icon, color, and background matching the emission category
  */
 const getCategoryIconInfo = (category) => {
   const cat = category?.toLowerCase() || '';
@@ -46,34 +48,235 @@ const getCategoryIconInfo = (category) => {
   return { icon: Sparkles, bg: '#ecfdf5', color: '#10b981', border: '#a7f3d0' };
 };
 
+/**
+ * Helper to format currency values cleanly
+ */
+const formatCurrency = (val) => {
+  if (val === null || val === undefined || isNaN(val)) return '₹0';
+  return `₹${Number(val).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+};
+
+/**
+ * Helper to format CO2e reduction values cleanly
+ */
+const formatCO2 = (val) => {
+  if (val === null || val === undefined || isNaN(val)) return '0 kg CO2e';
+  return `${Number(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg CO2e`;
+};
+
+/**
+ * Helper to format ISO date timestamp
+ */
+const formatDate = (isoString) => {
+  if (!isoString) return 'Recent';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    return d.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return isoString;
+  }
+};
+
 export default function Recommendations() {
   const navigate = useNavigate();
+
+  // Active factory identity
+  const [factoryId, setFactoryId] = useState(null);
+  const [factoryName, setFactoryName] = useState('');
+  const [isResolvingFactory, setIsResolvingFactory] = useState(true);
+
+  // Recommendations state from backend
+  const [recommendations, setRecommendations] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
+
+  // Modal inspection state
   const [activeModalRec, setActiveModalRec] = useState(null);
 
-  // Load calculated emission results from localStorage (or recalculate from saved factory data)
-  const [emissionData] = useState(() => {
-    try {
-      const savedResults = localStorage.getItem('ecoloop_emission_results');
-      if (savedResults) return JSON.parse(savedResults);
+  /**
+   * STEP 1: Determine the active factory_id using the application flow
+   */
+  useEffect(() => {
+    let isMounted = true;
 
-      const savedFactory = localStorage.getItem('ecoloop_factory_data');
-      if (savedFactory) {
-        const parsed = JSON.parse(savedFactory);
-        if (parsed.factoryName || parsed.electricityConsumption) {
-          const calculated = calculateEmissions(parsed);
-          localStorage.setItem('ecoloop_emission_results', JSON.stringify(calculated));
-          return calculated;
+    async function resolveFactory() {
+      setIsResolvingFactory(true);
+      try {
+        // 1. Check ecoloop_emission_results
+        const savedResults = localStorage.getItem('ecoloop_emission_results');
+        if (savedResults) {
+          const parsed = JSON.parse(savedResults);
+          if (parsed.factoryId) {
+            if (isMounted) {
+              setFactoryId(parsed.factoryId);
+              setFactoryName(parsed.factoryName || 'Selected Facility');
+              setIsResolvingFactory(false);
+              return;
+            }
+          }
+        }
+
+        // 2. Check ecoloop_current_factory_id
+        const savedCurrentId = localStorage.getItem('ecoloop_current_factory_id');
+        if (savedCurrentId && Number(savedCurrentId) > 0) {
+          if (isMounted) {
+            setFactoryId(Number(savedCurrentId));
+            setFactoryName('Selected Facility');
+            setIsResolvingFactory(false);
+            return;
+          }
+        }
+
+        // 3. Check ecoloop_factory_data
+        const savedFactory = localStorage.getItem('ecoloop_factory_data');
+        if (savedFactory) {
+          const parsed = JSON.parse(savedFactory);
+          if (parsed.factoryId) {
+            if (isMounted) {
+              setFactoryId(parsed.factoryId);
+              setFactoryName(parsed.factoryName || 'Selected Facility');
+              setIsResolvingFactory(false);
+              return;
+            }
+          }
+
+          // If factoryId is not in local storage but factoryName is, look up via getFactories API
+          if (parsed.factoryName) {
+            try {
+              const factories = await getFactories();
+              const matched = factories.find(
+                (f) => f.name && f.name.toLowerCase().trim() === parsed.factoryName.toLowerCase().trim()
+              );
+              if (matched && matched.id && isMounted) {
+                setFactoryId(matched.id);
+                setFactoryName(matched.name);
+                setIsResolvingFactory(false);
+                return;
+              }
+            } catch (apiErr) {
+              console.warn('Could not query factories list:', apiErr);
+            }
+          }
+        }
+
+        // 4. Fallback: If no factory in localStorage, check database factories list
+        // and match active default factory from application (e.g. ABC Manufacturing)
+        try {
+          const factories = await getFactories();
+          if (factories && factories.length > 0) {
+            const defaultMatched = factories.find(
+              (f) => f.name && f.name.toLowerCase().trim() === 'greentech manufacturing'
+            ) || factories.find(
+              (f) => f.name && f.name.toLowerCase().trim() === 'abc manufacturing'
+            );
+            const chosen = defaultMatched || factories[0];
+            if (chosen && chosen.id && isMounted) {
+              setFactoryId(chosen.id);
+              setFactoryName(chosen.name);
+              setIsResolvingFactory(false);
+              return;
+            }
+          }
+        } catch (apiErr) {
+          console.warn('Could not query fallback factories list:', apiErr);
+        }
+
+        // No factory found
+        if (isMounted) {
+          setFactoryId(null);
+          setFactoryName('');
+          setIsResolvingFactory(false);
+        }
+      } catch (err) {
+        console.error('Error resolving factory:', err);
+        if (isMounted) {
+          setFactoryId(null);
+          setIsResolvingFactory(false);
         }
       }
-      return null;
-    } catch (err) {
-      console.error('Error loading emission results:', err);
-      return null;
     }
-  });
 
-  // Empty State: If no factory data exists yet
-  if (!emissionData) {
+    resolveFactory();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  /**
+   * STEP 2: Fetch recommendations from FastAPI backend for the resolved factory
+   */
+  const fetchRecommendations = useCallback(async () => {
+    if (!factoryId) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const data = await getFactoryRecommendations(factoryId);
+      if (Array.isArray(data)) {
+        // Sort recommendations: High > Medium > Low, then newest first
+        const priorityRank = { high: 1, medium: 2, low: 3 };
+        const sorted = [...data].sort((a, b) => {
+          const pA = priorityRank[a.priority?.toLowerCase()] || 4;
+          const pB = priorityRank[b.priority?.toLowerCase()] || 4;
+          if (pA !== pB) return pA - pB;
+          const dateA = new Date(a.created_at || 0).getTime();
+          const dateB = new Date(b.created_at || 0).getTime();
+          if (dateA !== dateB) return dateB - dateA;
+          return (b.id || 0) - (a.id || 0);
+        });
+        setRecommendations(sorted);
+        setLastRefreshed(new Date());
+      } else {
+        setRecommendations([]);
+      }
+    } catch (err) {
+      console.error('Failed to load factory recommendations:', err);
+      const errMsg = err.message || '';
+      if (errMsg.includes('connect') || errMsg.includes('Failed to fetch')) {
+        setError('Unable to connect to EcoLoop API. Please verify that the backend server is running on port 8000.');
+      } else {
+        setError(errMsg || 'Unable to load recommendations.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [factoryId]);
+
+  useEffect(() => {
+    if (factoryId) {
+      fetchRecommendations();
+    }
+  }, [factoryId, fetchRecommendations]);
+
+  // -------------------------------------------------------------
+  // RENDER: Resolving Factory Spinner
+  // -------------------------------------------------------------
+  if (isResolvingFactory) {
+    return (
+      <div style={{ maxWidth: '640px', margin: '4rem auto', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '3.5rem 2rem', alignItems: 'center' }}>
+          <Loader2 size={36} className="spinning" style={{ color: 'var(--primary)', marginBottom: '1.25rem' }} />
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>
+            Verifying factory profile...
+          </h3>
+        </div>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // RENDER: No Factory Selected State
+  // -------------------------------------------------------------
+  if (!factoryId) {
     return (
       <div style={{ maxWidth: '640px', margin: '4rem auto', textAlign: 'center' }}>
         <div className="card" style={{ padding: '3.5rem 2rem', alignItems: 'center' }}>
@@ -94,11 +297,11 @@ export default function Recommendations() {
           </div>
 
           <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-            No emission data available
+            No factory selected
           </h3>
 
           <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '440px', marginBottom: '1.75rem', lineHeight: 1.5 }}>
-            Please submit factory data to generate recommendations.
+            Submit factory operational data to identify primary emission hotspots and generate personalized decarbonization recommendations.
           </p>
 
           <button
@@ -114,63 +317,6 @@ export default function Recommendations() {
       </div>
     );
   }
-
-  // Detect dynamic hotspot
-  const hotspot = detectHotspot(emissionData);
-  const isZero = !hotspot || hotspot.isZero || Number(emissionData.totalCO2) <= 0;
-
-  // Zero / Edge Case State: If emissions are 0
-  if (isZero) {
-    return (
-      <div style={{ maxWidth: '640px', margin: '4rem auto', textAlign: 'center' }}>
-        <div className="card" style={{ padding: '3.5rem 2rem', alignItems: 'center' }}>
-          <div
-            style={{
-              width: '68px',
-              height: '68px',
-              borderRadius: '50%',
-              backgroundColor: '#fef3c7',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#d97706',
-              marginBottom: '1.25rem'
-            }}
-          >
-            <AlertCircle size={34} />
-          </div>
-
-          <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-            Insufficient emission data to identify a hotspot.
-          </h3>
-
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '460px', marginBottom: '1.75rem', lineHeight: 1.5 }}>
-            Reported factory emissions total 0 kg CO2e across all operational boundaries. Enter positive consumption values in the factory data form to detect emission leak-points and generate recommendations.
-          </p>
-
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => navigate('/factory-data')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
-          >
-            <Sparkles size={16} />
-            <span>Go to Factory Data</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Generate primary and supporting recommendations based on current hotspot
-  const primaryRec = getRecommendation(emissionData, hotspot);
-  if (!primaryRec) {
-    return null;
-  }
-
-  const primaryIconInfo = getCategoryIconInfo(hotspot.category);
-  const PrimaryIcon = primaryIconInfo.icon;
-  const supportingRecs = primaryRec.supportingRecommendations || [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
@@ -193,14 +339,25 @@ export default function Recommendations() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <Info size={18} style={{ flexShrink: 0, color: '#3b82f6' }} />
-          <span>Rule-based prototype: Estimated CO2 reductions are preliminary demo estimates for testing only.</span>
+          <span>
+            Persisted backend recommendations: Financial and CO2 reductions are indicative demo estimates based on operational hotspot profiles.
+          </span>
         </div>
-        <span style={{ fontSize: '0.75rem', background: '#dbeafe', color: '#1e40af', padding: '0.2rem 0.6rem', borderRadius: '4px', fontWeight: 600 }}>
-          Phase 2 Mock Engine
+        <span
+          style={{
+            fontSize: '0.75rem',
+            background: '#dbeafe',
+            color: '#1e40af',
+            padding: '0.2rem 0.6rem',
+            borderRadius: '4px',
+            fontWeight: 600
+          }}
+        >
+          FastAPI + MySQL (ecoloop_db)
         </span>
       </div>
 
-      {/* Header */}
+      {/* Page Header */}
       <div className="page-intro" style={{ marginBottom: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
@@ -209,10 +366,26 @@ export default function Recommendations() {
               <span>AI Recommendations</span>
             </h2>
             <p className="page-intro-desc">
-              Recommended actions based on your factory's current emission hotspot.
+              Actionable recommendations based on your factory's emission hotspots.
+              {factoryName && (
+                <span style={{ fontWeight: 600, color: 'var(--text-main)', marginLeft: '0.4rem' }}>
+                  • Facility: {factoryName} (ID: #{factoryId})
+                </span>
+              )}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={fetchRecommendations}
+              disabled={isLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              title="Fetch latest recommendations from MySQL"
+            >
+              <RefreshCw size={14} className={isLoading ? 'spinning' : ''} />
+              <span>{isLoading ? 'Refreshing...' : 'Refresh'}</span>
+            </button>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -220,7 +393,7 @@ export default function Recommendations() {
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <BarChart3 size={15} />
-              <span>View Emission Analysis</span>
+              <span>Emission Analysis</span>
             </button>
             <button
               type="button"
@@ -229,259 +402,151 @@ export default function Recommendations() {
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <Factory size={15} />
-              <span>Update Factory Data</span>
+              <span>Factory Data</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Hotspot Summary Banner / Card */}
-      <div
-        className="card"
-        style={{
-          padding: '1.25rem 1.5rem',
-          background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
-          border: '1px solid #bbf7d0',
-          borderRadius: 'var(--radius-lg)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1.25rem',
-          boxShadow: 'var(--shadow-sm)'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-          <div
-            style={{
-              width: '52px',
-              height: '52px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: primaryIconInfo.bg,
-              color: primaryIconInfo.color,
-              border: `1px solid ${primaryIconInfo.border}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}
-          >
-            <PrimaryIcon size={26} />
+      {/* -------------------------------------------------------------
+          RENDER: Error State
+          ------------------------------------------------------------- */}
+      {error && (
+        <div
+          className="card"
+          style={{
+            padding: '1.5rem',
+            backgroundColor: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '1rem'
+          }}
+        >
+          <AlertCircle size={22} style={{ color: '#ef4444', flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ flex: 1 }}>
+            <h4 style={{ margin: '0 0 0.35rem', color: '#991b1b', fontSize: '1rem', fontWeight: 700 }}>
+              Unable to load recommendations
+            </h4>
+            <p style={{ margin: '0 0 1rem', color: '#b91c1c', fontSize: '0.9rem', lineHeight: 1.5 }}>
+              {error}
+            </p>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={fetchRecommendations}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <RefreshCw size={14} />
+              <span>Retry Request</span>
+            </button>
           </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.25rem' }}>
-              <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#15803d', fontWeight: 700 }}>
-                Primary Hotspot Detected
-              </span>
-              <span
-                style={{
-                  backgroundColor: '#dcfce7',
-                  color: '#166534',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  padding: '0.15rem 0.5rem',
-                  borderRadius: '999px',
-                  border: '1px solid #86efac'
-                }}
-              >
-                Rank #1 Contributor
-              </span>
-            </div>
-            <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              Current Hotspot: <span style={{ color: '#047857' }}>{hotspot.category}</span>
+        </div>
+      )}
+
+      {/* -------------------------------------------------------------
+          RENDER: Loading State
+          ------------------------------------------------------------- */}
+      {isLoading && recommendations.length === 0 && (
+        <div style={{ maxWidth: '640px', margin: '3rem auto', textAlign: 'center' }}>
+          <div className="card" style={{ padding: '3.5rem 2rem', alignItems: 'center' }}>
+            <Loader2 size={40} className="spinning" style={{ color: 'var(--primary)', marginBottom: '1.25rem' }} />
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+              Loading recommendations...
             </h3>
-            <p style={{ margin: '0.25rem 0 0', fontSize: '0.86rem', color: 'var(--text-muted)' }}>
-              {hotspot.category} is the dominant greenhouse gas contributor for {emissionData.factoryName || 'the facility'}.
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', margin: 0 }}>
+              Retrieving persisted decarbonization pathways from EcoLoop backend.
             </p>
           </div>
         </div>
+      )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>
-              Hotspot Emissions
+      {/* -------------------------------------------------------------
+          RENDER: Empty State (0 Recommendations in Database)
+          ------------------------------------------------------------- */}
+      {!isLoading && !error && recommendations.length === 0 && (
+        <div style={{ maxWidth: '640px', margin: '3rem auto', textAlign: 'center' }}>
+          <div className="card" style={{ padding: '3.5rem 2rem', alignItems: 'center' }}>
+            <div
+              style={{
+                width: '68px',
+                height: '68px',
+                borderRadius: '50%',
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--text-muted)',
+                marginBottom: '1.25rem'
+              }}
+            >
+              <Lightbulb size={34} />
             </div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {Number(hotspot.value).toLocaleString()}{' '}
-              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>kg CO2e</span>
-            </div>
-          </div>
-          <div style={{ borderLeft: '1px solid #bbf7d0', height: '36px' }} />
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>
-              Contribution Share
-            </div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#047857' }}>
-              {hotspot.percentage}%
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Primary Recommendation Card (Highlighted / Featured) */}
-      <div className="rec-primary-card">
-        <div>
-          <div className="rec-card-top" style={{ marginBottom: '0.85rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div
-                className="rec-icon"
-                style={{
-                  backgroundColor: primaryIconInfo.bg,
-                  color: primaryIconInfo.color,
-                  border: `1px solid ${primaryIconInfo.border}`
-                }}
+            <h3 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+              No recommendations available yet
+            </h3>
+
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '460px', marginBottom: '1.75rem', lineHeight: 1.5 }}>
+              Submit factory data and generate an emission analysis to receive tailored decarbonization initiatives and circular alternatives.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => navigate('/factory-data')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
               >
-                <PrimaryIcon size={24} />
-              </div>
-              <div>
-                <span
-                  style={{
-                    fontSize: '0.75rem',
-                    textTransform: 'uppercase',
-                    fontWeight: 700,
-                    letterSpacing: '0.06em',
-                    color: 'var(--primary-dark)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem'
-                  }}
-                >
-                  <Sparkles size={14} />
-                  Featured Recommendation
-                </span>
-                <h3 style={{ margin: '0.15rem 0 0', fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  {primaryRec.title}
-                </h3>
-              </div>
-            </div>
-
-            <div className="rec-badges">
-              <Badge variant={primaryRec.hotspot}>{primaryRec.hotspot}</Badge>
-              <Badge variant={primaryRec.priority}>{primaryRec.priority} Priority</Badge>
-            </div>
-          </div>
-
-          <p style={{ fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: 1.6, margin: '0 0 1.25rem' }}>
-            {primaryRec.recommendation}
-          </p>
-
-          {/* Why Matters + Recommended Action Grid */}
-          <div className="rec-callout-grid">
-            <div className="rec-callout-box" style={{ borderLeft: '3px solid #3b82f6' }}>
-              <div className="rec-callout-title" style={{ color: '#2563eb' }}>
-                <Info size={14} />
-                <span>Why This Matters (Reason)</span>
-              </div>
-              <p className="rec-callout-content">
-                {primaryRec.reason}
-              </p>
-            </div>
-
-            <div className="rec-callout-box" style={{ borderLeft: '3px solid #10b981' }}>
-              <div className="rec-callout-title" style={{ color: '#059669' }}>
-                <Target size={14} />
-                <span>Recommended Action</span>
-              </div>
-              <p className="rec-callout-content">
-                {primaryRec.action}
-              </p>
+                <Sparkles size={16} />
+                <span>Go to Factory Data</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => navigate('/emission-analysis')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                <BarChart3 size={16} />
+                <span>View Emission Analysis</span>
+              </button>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Impact Summary & Actions */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '1rem',
-            paddingTop: '0.75rem',
-            borderTop: '1px solid var(--border-subtle)'
-          }}
-        >
-          <div
-            className="rec-impact-box"
-            style={{
-              padding: '0.85rem 1.25rem',
-              minWidth: '240px',
-              backgroundColor: '#ecfdf5',
-              borderColor: '#a7f3d0'
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span className="impact-label" style={{ color: '#047857' }}>
-                Estimated CO2 Reduction
-              </span>
-              <span className="impact-value" style={{ color: '#065f46', fontSize: '1.25rem' }}>
-                {primaryRec.estimatedReductionDisplay}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', color: '#10b981' }}>
-              <TrendingDown size={28} />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              onClick={() =>
-                setActiveModalRec({
-                  title: primaryRec.title,
-                  category: primaryRec.hotspot,
-                  priority: primaryRec.priority,
-                  estimatedReduction: primaryRec.estimatedReductionDisplay,
-                  reason: primaryRec.reason,
-                  recommendation: primaryRec.recommendation,
-                  action: primaryRec.action,
-                  steps: [
-                    primaryRec.action,
-                    `Target a reduction of ${primaryRec.estimatedReductionPercentage}% in the next fiscal quarter.`,
-                    'Review equipment energy efficiency and idle load logs.',
-                    'Implement employee best practices for equipment shutdowns.',
-                    'Evaluate circular raw materials and certified renewable tariffs.'
-                  ]
-                })
-              }
-            >
-              <span>View Action Plan</span>
-              <ChevronRight size={15} />
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => navigate('/circular-alternatives')}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <span>Explore Circular Alternatives</span>
-              <ArrowRight size={15} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Supporting Recommendations */}
-      <div>
-        <div style={{ marginBottom: '1.25rem' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-main)', margin: '0 0 0.25rem' }}>
-            Secondary Decarbonization Opportunities
-          </h3>
-          <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', margin: 0 }}>
-            Continuous improvement actions across non-hotspot categories to maximize overall sustainability.
-          </p>
-        </div>
-
-        <div className="recommendations-grid">
-          {supportingRecs.map((rec) => {
-            const iconInfo = getCategoryIconInfo(rec.category);
+      {/* -------------------------------------------------------------
+          RENDER: Recommendations List (Populated from MySQL)
+          ------------------------------------------------------------- */}
+      {!isLoading && recommendations.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {recommendations.map((rec, index) => {
+            const iconInfo = getCategoryIconInfo(rec.hotspot);
             const RecIcon = iconInfo.icon;
+            const isFeatured = index === 0;
 
             return (
-              <div key={rec.category} className="rec-card">
-                <div>
-                  <div className="rec-card-top">
+              <div
+                key={rec.id}
+                className={isFeatured ? 'rec-primary-card' : 'card'}
+                style={
+                  !isFeatured
+                    ? {
+                        padding: '1.75rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '1.25rem',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--radius-lg)'
+                      }
+                    : {}
+                }
+              >
+                {/* Card Top: Hotspot & Priority Badges */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
                     <div
                       className="rec-icon"
                       style={{
@@ -490,61 +555,179 @@ export default function Recommendations() {
                         border: `1px solid ${iconInfo.border}`
                       }}
                     >
-                      <RecIcon size={22} />
+                      <RecIcon size={24} />
                     </div>
-                    <div className="rec-badges">
-                      <Badge variant={rec.category}>{rec.category}</Badge>
-                      <Badge variant={rec.priority}>{rec.priority} Priority</Badge>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                        <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: iconInfo.color, fontWeight: 700 }}>
+                          🔥 Emission Hotspot: {rec.hotspot}
+                        </span>
+                        {isFeatured && (
+                          <span
+                            style={{
+                              backgroundColor: '#dcfce7',
+                              color: '#166534',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              padding: '0.1rem 0.45rem',
+                              borderRadius: '999px',
+                              border: '1px solid #86efac'
+                            }}
+                          >
+                            Top Recommendation
+                          </span>
+                        )}
+                      </div>
+                      <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                        {rec.hotspot} Decarbonization Pathway #{rec.id}
+                      </h3>
                     </div>
                   </div>
 
-                  <h3 className="rec-title">{rec.title}</h3>
-                  <p className="rec-desc">{rec.description}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    <Badge variant={rec.hotspot}>{rec.hotspot}</Badge>
+                    <Badge variant={rec.priority}>{rec.priority} Priority</Badge>
+                    <div
+                      style={{
+                        fontSize: '0.78rem',
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        marginLeft: '0.25rem'
+                      }}
+                    >
+                      <Clock size={13} />
+                      <span>{formatDate(rec.created_at)}</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <div className="rec-impact-box">
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span className="impact-label">Est. CO2 Reduction</span>
-                      <span className="impact-value">{rec.estimatedReduction}</span>
+                {/* Callout Boxes: Recommended Action & Circular Alternative */}
+                <div className="rec-callout-grid">
+                  {/* Recommended Action */}
+                  <div className="rec-callout-box" style={{ borderLeft: '3px solid #10b981' }}>
+                    <div className="rec-callout-title" style={{ color: '#059669' }}>
+                      <Target size={15} />
+                      <span>🤖 Recommended Action</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', color: '#10b981' }}>
-                      <TrendingDown size={22} />
+                    <p className="rec-callout-content" style={{ color: 'var(--text-main)', lineHeight: 1.55 }}>
+                      {rec.recommendation || 'Continuous monitoring and equipment load scheduling.'}
+                    </p>
+                  </div>
+
+                  {/* Circular Alternative */}
+                  <div className="rec-callout-box" style={{ borderLeft: '3px solid #3b82f6' }}>
+                    <div className="rec-callout-title" style={{ color: '#2563eb' }}>
+                      <Sparkles size={15} />
+                      <span>♻️ Circular Alternative</span>
+                    </div>
+                    <p className="rec-callout-content" style={{ color: 'var(--text-main)', lineHeight: 1.55 }}>
+                      {rec.circular_alternative || 'Recover usable materials and prioritize renewable inputs.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Metrics / Impact Section */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '1.25rem',
+                    paddingTop: '1rem',
+                    borderTop: '1px solid var(--border-subtle)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                    {/* Estimated Cost */}
+                    <div
+                      style={{
+                        backgroundColor: '#f8fafc',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '0.65rem 1rem',
+                        display: 'flex',
+                        flexDirection: 'column'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                        💰 Estimated Cost
+                      </span>
+                      <span style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '0.15rem' }}>
+                        {formatCurrency(rec.estimated_cost)}
+                      </span>
+                    </div>
+
+                    {/* Estimated CO2 Reduction */}
+                    <div
+                      style={{
+                        backgroundColor: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '0.65rem 1rem',
+                        display: 'flex',
+                        flexDirection: 'column'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#047857', fontWeight: 700, letterSpacing: '0.04em' }}>
+                        🌱 Estimated CO2 Reduction
+                      </span>
+                      <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#065f46', marginTop: '0.15rem' }}>
+                        {formatCO2(rec.estimated_co2_reduction)}
+                      </span>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-full mt-3"
-                    onClick={() =>
-                      setActiveModalRec({
-                        title: rec.title,
-                        category: rec.category,
-                        priority: rec.priority,
-                        estimatedReduction: rec.estimatedReduction,
-                        reason: `Secondary initiative to optimize ${rec.category.toLowerCase()} operational consumption.`,
-                        recommendation: rec.description,
-                        action: rec.description,
-                        steps: [
-                          rec.description,
-                          `Incorporate ${rec.category.toLowerCase()} benchmarks into weekly facility reviews.`,
-                          'Engage supply chain partners and vendors on zero-waste targets.',
-                          'Calculate projected cost savings in the What-If simulator.'
-                        ]
-                      })
-                    }
-                  >
-                    <span>View Details</span>
-                    <ChevronRight size={16} />
-                  </button>
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() =>
+                        setActiveModalRec({
+                          id: rec.id,
+                          hotspot: rec.hotspot,
+                          priority: rec.priority,
+                          estimatedCost: formatCurrency(rec.estimated_cost),
+                          estimatedReduction: formatCO2(rec.estimated_co2_reduction),
+                          recommendation: rec.recommendation,
+                          circularAlternative: rec.circular_alternative,
+                          createdAt: formatDate(rec.created_at),
+                          steps: [
+                            rec.recommendation,
+                            rec.circular_alternative,
+                            'Schedule operational maintenance and energy audit reviews.',
+                            'Verify emission reductions and monitor monthly progress against baseline.'
+                          ]
+                        })
+                      }
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <span>View Action Plan</span>
+                      <ChevronRight size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => navigate('/circular-alternatives')}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <span>Explore Circular Alternatives</span>
+                      <ArrowRight size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      )}
 
-      {/* Interactive Details Modal */}
+      {/* -------------------------------------------------------------
+          MODAL: Recommendation Action Plan
+          ------------------------------------------------------------- */}
       {activeModalRec && (
         <div className="modal-overlay" onClick={() => setActiveModalRec(null)}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
@@ -552,25 +735,25 @@ export default function Recommendations() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div
                   style={{
-                    width: '36px',
-                    height: '36px',
+                    width: '38px',
+                    height: '38px',
                     borderRadius: 'var(--radius-md)',
-                    background: getCategoryIconInfo(activeModalRec.category).bg,
-                    color: getCategoryIconInfo(activeModalRec.category).color,
-                    border: `1px solid ${getCategoryIconInfo(activeModalRec.category).border}`,
+                    background: getCategoryIconInfo(activeModalRec.hotspot).bg,
+                    color: getCategoryIconInfo(activeModalRec.hotspot).color,
+                    border: `1px solid ${getCategoryIconInfo(activeModalRec.hotspot).border}`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}
                 >
-                  <Sparkles size={18} />
+                  <Sparkles size={20} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
-                    {activeModalRec.title}
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700 }}>
+                    {activeModalRec.hotspot} Decarbonization Plan #{activeModalRec.id}
                   </h3>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Category: {activeModalRec.category} • {activeModalRec.priority} Priority
+                    Priority: {activeModalRec.priority} • Created: {activeModalRec.createdAt}
                   </span>
                 </div>
               </div>
@@ -578,6 +761,7 @@ export default function Recommendations() {
                 type="button"
                 onClick={() => setActiveModalRec(null)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                aria-label="Close modal"
               >
                 <X size={20} />
               </button>
@@ -587,48 +771,48 @@ export default function Recommendations() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1.25rem' }}>
                 <div style={{ background: '#ecfdf5', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid #a7f3d0' }}>
                   <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#047857', fontWeight: 700 }}>
-                    Est. CO2 Reduction
+                    🌱 Est. CO2 Reduction
                   </span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#065f46' }}>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#065f46', marginTop: '0.2rem' }}>
                     {activeModalRec.estimatedReduction}
                   </div>
                 </div>
 
                 <div style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                   <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 700 }}>
-                    Priority Status
+                    💰 Estimated Cost
                   </span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                    {activeModalRec.priority} Priority
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '0.2rem' }}>
+                    {activeModalRec.estimatedCost}
                   </div>
                 </div>
               </div>
 
               <div style={{ marginBottom: '1.25rem' }}>
                 <h4 style={{ fontSize: '0.88rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
-                  Why This Matters
+                  🤖 Recommended Action:
                 </h4>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-                  {activeModalRec.reason}
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-main)', margin: 0, lineHeight: 1.55 }}>
+                  {activeModalRec.recommendation}
                 </p>
               </div>
 
               <div style={{ marginBottom: '1.25rem' }}>
                 <h4 style={{ fontSize: '0.88rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
-                  Recommendation
+                  ♻️ Circular Alternative Pathway:
                 </h4>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-                  {activeModalRec.recommendation}
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-main)', margin: 0, lineHeight: 1.55 }}>
+                  {activeModalRec.circularAlternative}
                 </p>
               </div>
 
               <div>
                 <h4 style={{ fontSize: '0.88rem', fontWeight: 700, marginBottom: '0.6rem', color: 'var(--text-main)' }}>
-                  Action Steps Checklist:
+                  Implementation Checklist:
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {activeModalRec.steps.map((step, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', fontSize: '0.84rem', color: 'var(--text-main)' }}>
+                    <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', fontSize: '0.85rem', color: 'var(--text-main)' }}>
                       <CheckCircle2 size={16} style={{ color: '#10b981', marginTop: '2px', flexShrink: 0 }} />
                       <span>{step}</span>
                     </div>

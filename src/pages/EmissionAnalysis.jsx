@@ -241,11 +241,11 @@ export default function EmissionAnalysis() {
                 </div>
               </div>
               <div className="stat-value">
-                {emissionData.totalCO2.toLocaleString()} <span style={{ fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-muted)' }}>kg CO2e</span>
+                {(Number(emissionData.totalCO2) || 0).toLocaleString()} <span style={{ fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-muted)' }}>kg CO2e</span>
               </div>
               <div className="stat-subtext">
                 <span style={{ fontWeight: 600, color: 'var(--primary-dark)' }}>
-                  {emissionData.totalCO2Tons} metric tons CO2e
+                  {emissionData.totalCO2Tons ?? ((Number(emissionData.totalCO2) || 0) / 1000).toFixed(2)} metric tons CO2e
                 </span>
               </div>
             </div>
@@ -258,14 +258,14 @@ export default function EmissionAnalysis() {
                 </div>
               </div>
               <div className="stat-value" style={{ color: '#b91c1c' }}>
-                {hotspot.category}
+                {hotspot?.category || 'No hotspot'}
               </div>
               <div className="stat-subtext">
                 <span className="badge badge-high">
                   Primary Leak Point
                 </span>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  {hotspot.scope}
+                  {hotspot?.scope || 'Operational'}
                 </span>
               </div>
             </div>
@@ -278,7 +278,7 @@ export default function EmissionAnalysis() {
                 </div>
               </div>
               <div className="stat-value">
-                {hotspot.percentage}%
+                {hotspot?.percentage ?? 0}%
               </div>
               <div className="stat-subtext">
                 <span>Proportion of plant carbon footprint</span>
@@ -293,10 +293,10 @@ export default function EmissionAnalysis() {
                 </div>
               </div>
               <div className="stat-value">
-                {hotspot.value.toLocaleString()} <span style={{ fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-muted)' }}>kg CO2e</span>
+                {(Number(hotspot?.value) || 0).toLocaleString()} <span style={{ fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-muted)' }}>kg CO2e</span>
               </div>
               <div className="stat-subtext">
-                <span>{(hotspot.value / 1000).toFixed(2)} metric tons CO2e</span>
+                <span>{((Number(hotspot?.value) || 0) / 1000).toFixed(2)} metric tons CO2e</span>
               </div>
             </div>
           </div>
@@ -448,7 +448,7 @@ export default function EmissionAnalysis() {
                         </span>
 
                         <span className="contributor-val">
-                          {item.percentage}% &nbsp;•&nbsp; <span style={{ color: item.color }}>{item.value.toLocaleString()} kg CO2e</span>
+                          {item.percentage}% &nbsp;•&nbsp; <span style={{ color: item.color }}>{(Number(item.value) || 0).toLocaleString()} kg CO2e</span>
                         </span>
                       </div>
 
@@ -522,13 +522,13 @@ export default function EmissionAnalysis() {
                           {item.scope} • {item.description}
                         </span>
                         <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          Input: {item.inputQuantity?.toLocaleString()} {item.inputUnit} × {item.factor} kg CO2e/{item.inputUnit}
+                          Input: {(Number(item.inputQuantity) || 0).toLocaleString()} {item.inputUnit} × {item.factor} kg CO2e/{item.inputUnit}
                         </span>
                       </div>
                     </div>
 
                     <div className="category-stats">
-                      <span className="category-val">{item.kg?.toLocaleString()} kg CO2e</span>
+                      <span className="category-val">{(Number(item.kg) || 0).toLocaleString()} kg CO2e</span>
                       <span className="category-percentage">
                         <strong>{item.percentage}%</strong> ({item.tons} tons)
                       </span>
@@ -548,28 +548,28 @@ export default function EmissionAnalysis() {
                   <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Plastic Waste (2.50 kg CO2e/kg)</span>
                     <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
-                      {emissionData.breakdown.find(b => b.category === 'Waste').subBreakdown.plastic.kg.toLocaleString()} kg CO2e
+                      {(Number(emissionData.breakdown.find(b => b.category === 'Waste')?.subBreakdown?.plastic?.kg) || 0).toLocaleString()} kg CO2e
                     </div>
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Metal Waste (1.80 kg CO2e/kg)</span>
                     <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
-                      {emissionData.breakdown.find(b => b.category === 'Waste').subBreakdown.metal.kg.toLocaleString()} kg CO2e
+                      {(Number(emissionData.breakdown.find(b => b.category === 'Waste')?.subBreakdown?.metal?.kg) || 0).toLocaleString()} kg CO2e
                     </div>
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Paper Waste (1.00 kg CO2e/kg)</span>
                     <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
-                      {emissionData.breakdown.find(b => b.category === 'Waste').subBreakdown.paper.kg.toLocaleString()} kg CO2e
+                      {(Number(emissionData.breakdown.find(b => b.category === 'Waste')?.subBreakdown?.paper?.kg) || 0).toLocaleString()} kg CO2e
                     </div>
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Other Waste (1.20 kg CO2e/kg)</span>
                     <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
-                      {emissionData.breakdown.find(b => b.category === 'Waste').subBreakdown.other.kg.toLocaleString()} kg CO2e
+                      {(Number(emissionData.breakdown.find(b => b.category === 'Waste')?.subBreakdown?.other?.kg) || 0).toLocaleString()} kg CO2e
                     </div>
                   </div>
                 </div>

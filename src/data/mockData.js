@@ -4,19 +4,19 @@
  */
 
 export const FACTORY_INFO = {
-  name: "ABC Manufacturing",
+  name: "GreenTech Manufacturing",
   facilityId: "FAC-8820",
-  type: "Automotive Precision & Stamping",
-  location: "Plant 4 - Industrial Corridor",
+  type: "Manufacturing",
+  location: "Ahmedabad, Gujarat",
   lastAudit: "March 2026",
   status: "Active Monitoring"
 };
 
 export const DASHBOARD_STATS = {
   totalEmissions: {
-    value: 1248,
-    display: "1,248",
-    unit: "tons CO2",
+    value: 111.2,
+    display: "111.2",
+    unit: "tons CO2e",
     trend: "-8.4%",
     isPositiveTrend: true, // In emissions, a decrease is good!
     period: "vs last month"
@@ -30,18 +30,18 @@ export const DASHBOARD_STATS = {
     period: "30-day rolling"
   },
   production: {
-    value: 10000,
-    display: "10,000",
+    value: 12500,
+    display: "12,500",
     unit: "units",
     trend: "+4.2%",
     isPositiveTrend: true,
     period: "Standard output"
   },
   potentialReduction: {
-    value: 268,
-    display: "268",
+    value: 28.0,
+    display: "28.0",
     unit: "tons CO2",
-    trend: "21.5% of total",
+    trend: "25.2% of total",
     isPositiveTrend: true,
     period: "Actionable target"
   }
@@ -50,67 +50,67 @@ export const DASHBOARD_STATS = {
 export const EMISSION_BREAKDOWN = [
   {
     category: "Electricity",
-    percentage: 48,
-    tons: 599,
+    percentage: 70,
+    tons: 77.9,
     color: "#ef4444",
     badgeType: "energy",
     scope: "Scope 2 (Indirect)",
-    description: "Grid electricity consumed across HVAC, production presses, and lighting"
-  },
-  {
-    category: "Fuel",
-    percentage: 27,
-    tons: 337,
-    color: "#f97316",
-    badgeType: "fuel",
-    scope: "Scope 1 (Direct)",
-    description: "Onsite diesel generators and natural gas industrial boilers"
-  },
-  {
-    category: "Raw Materials",
-    percentage: 18,
-    tons: 225,
-    color: "#8b5cf6",
-    badgeType: "materials",
-    scope: "Scope 3 (Upstream)",
-    description: "Embodied carbon in virgin polymers, aluminum billets, and steel coils"
+    description: "Grid electricity consumed across HVAC, induction furnaces, and compressed air"
   },
   {
     category: "Waste",
-    percentage: 7,
-    tons: 87,
+    percentage: 12,
+    tons: 12.8,
     color: "#0284c7",
     badgeType: "waste",
     scope: "Scope 3 (Downstream)",
-    description: "Landfilled plastics, metal swarf disposal, and packing waste"
+    description: "Industrial polymer scrap, machining metal swarf, paper packaging, and discards"
+  },
+  {
+    category: "Fuel",
+    percentage: 10,
+    tons: 11.3,
+    color: "#f97316",
+    badgeType: "fuel",
+    scope: "Scope 1 (Direct)",
+    description: "Onsite diesel generators and natural gas furnace pre-heaters"
+  },
+  {
+    category: "Raw Materials",
+    percentage: 8,
+    tons: 9.3,
+    color: "#8b5cf6",
+    badgeType: "materials",
+    scope: "Scope 3 (Upstream)",
+    description: "Embodied carbon in secondary alloy billets and structural composite feedstock"
   }
 ];
 
 export const MONTHLY_EMISSIONS_TREND = [
-  { month: "Oct", emissions: 1390, target: 1300 },
-  { month: "Nov", emissions: 1362, target: 1280 },
-  { month: "Dec", emissions: 1320, target: 1250 },
-  { month: "Jan", emissions: 1295, target: 1200 },
-  { month: "Feb", emissions: 1362, target: 1180 },
-  { month: "Mar", emissions: 1248, target: 1150 }
+  { month: "Oct", emissions: 138, target: 130 },
+  { month: "Nov", emissions: 132, target: 128 },
+  { month: "Dec", emissions: 125, target: 122 },
+  { month: "Jan", emissions: 120, target: 118 },
+  { month: "Feb", emissions: 116, target: 115 },
+  { month: "Mar", emissions: 111, target: 110 }
 ];
 
 export const EMISSION_HOTSPOT = {
   category: "Electricity",
-  percentage: 48,
-  tons: 599,
+  percentage: 70,
+  tons: 77.9,
   severity: "Primary Emission Hotspot",
-  leakPoint: "Thermal curing line blowers & un-sequenced compressor banks",
+  leakPoint: "Thermal curing line blowers & un-sequenced induction compressor banks",
   recommendationSummary: "Consider increasing renewable electricity usage to reduce electricity-related emissions."
 };
 
 export const AI_RECOMMENDATION_PREVIEW = {
   title: "Transition to Renewable Electricity & Onsite Solar",
-  summary: "Consider increasing renewable electricity usage to reduce electricity-related emissions.",
-  potentialReduction: "268 tons CO2",
+  summary: "Deploy a 120 kWp rooftop solar photovoltaic array and transition base grid supply to an open-access captive renewable Power Purchase Agreement (PPA).",
+  potentialReduction: "28.0 tons CO2",
   priority: "High",
   category: "Energy",
-  estimatedAnnualSavings: "$42,000",
+  estimatedAnnualSavings: "₹18,50,000",
   implementationTime: "3-6 months"
 };
 
@@ -250,64 +250,61 @@ export const INITIAL_EMPTY_FORM_DATA = {
 };
 
 export const DEFAULT_FACTORY_FORM_DATA = {
-  factoryName: "ABC Manufacturing",
-  location: "Industrial Corridor, Sector 4",
-  industryType: "Automotive Precision & Stamping",
-  electricityConsumption: "1250000",
-  renewableEnergyPercent: "15",
-  fuelConsumption: "42000",
-  materialType: "Steel & Polypropylene",
-  materialQuantity: "840",
-  plasticWaste: "35000",
-  metalWaste: "28000",
-  paperWaste: "14000",
-  otherWaste: "5000",
-  productionUnits: "10000",
+  factoryName: "GreenTech Manufacturing",
+  location: "Ahmedabad, Gujarat",
+  industryType: "Manufacturing",
+  electricityConsumption: "95000",
+  renewableEnergyPercent: "20",
+  fuelConsumption: "4200",
+  materialType: "Recycled Aluminum & Polymer Composite",
+  materialQuantity: "18500",
+  plasticWaste: "2400",
+  metalWaste: "3100",
+  paperWaste: "850",
+  otherWaste: "450",
+  productionUnits: "12500",
   date: "2026-03-15"
 };
 
 /**
- * Simulator Mock Calculation Engine
- * Baseline: 1,248 tons CO2
- * Structure designed so a backend calculation engine can replace this later.
+ * Simulator Calculation Engine
+ * Baseline: 111.2 tons CO2e matching GreenTech Manufacturing
  */
-export const calculateSimulatedEmissions = (renewablePercent, recycledPercent, wasteRecoveryPercent) => {
-  const BASELINE_TOTAL = 1248;
-  const BASELINE_ELECTRICITY = 599; // 48%
-  const BASELINE_MATERIALS = 225;   // 18%
-  const BASELINE_WASTE = 87;        // 7%
-  const BASELINE_FUEL = 337;        // 27% (unaffected by these 3 sliders)
+export const calculateSimulatedEmissions = (renewablePercent, recycledPercent, wasteRecoveryPercent, customBaseline = null) => {
+  const BASELINE_TOTAL = customBaseline?.total || 111.2;
+  const BASELINE_ELECTRICITY = customBaseline?.electricity || 77.9; // ~70%
+  const BASELINE_MATERIALS = customBaseline?.materials || 9.3;      // ~8%
+  const BASELINE_WASTE = customBaseline?.waste || 12.8;             // ~12%
+  const BASELINE_FUEL = customBaseline?.fuel || 11.3;               // ~10% (unaffected by these 3 sliders)
 
   // Reductions from renewable energy (applies to electricity portion)
-  // Max reduction up to ~80% of electricity emissions
   const electricitySavings = BASELINE_ELECTRICITY * (renewablePercent / 100) * 0.85;
 
   // Reductions from recycled materials (applies to raw material embodied emissions)
-  // Max reduction up to ~65% of raw materials emissions
   const materialSavings = BASELINE_MATERIALS * (recycledPercent / 100) * 0.65;
 
   // Reductions from waste recovery (applies to waste emissions)
-  // Max reduction up to ~75% of waste emissions
   const wasteSavings = BASELINE_WASTE * (wasteRecoveryPercent / 100) * 0.75;
 
-  const totalSaved = Math.round(electricitySavings + materialSavings + wasteSavings);
-  const projectedTotal = Math.max(BASELINE_TOTAL - totalSaved, 420);
-  const percentageReduced = ((totalSaved / BASELINE_TOTAL) * 100).toFixed(1);
+  const totalSaved = Number((electricitySavings + materialSavings + wasteSavings).toFixed(1));
+  const projectedTotal = Number(Math.max(BASELINE_TOTAL - totalSaved, 35.0).toFixed(1));
+  const percentageReduced = Number(((totalSaved / BASELINE_TOTAL) * 100).toFixed(1));
 
-  // Estimated annual cost saving ($160/ton CO2 avoided via fuel/materials/tariffs)
+  // Estimated annual cost saving (~$155 / ton CO2 avoided)
   const estimatedFinancialSavings = Math.round(totalSaved * 155);
 
   return {
-    baselineTotal: BASELINE_TOTAL,
+    baselineTotal: Number(BASELINE_TOTAL.toFixed(1)),
     projectedTotal,
     tonsSaved: totalSaved,
     percentageReduced: Number(percentageReduced),
     financialSavings: estimatedFinancialSavings,
     breakdown: {
-      electricity: Math.round(BASELINE_ELECTRICITY - electricitySavings),
-      fuel: BASELINE_FUEL,
-      materials: Math.round(BASELINE_MATERIALS - materialSavings),
-      waste: Math.round(BASELINE_WASTE - wasteSavings)
+      electricity: Number((BASELINE_ELECTRICITY - electricitySavings).toFixed(1)),
+      fuel: Number(BASELINE_FUEL.toFixed(1)),
+      materials: Number((BASELINE_MATERIALS - materialSavings).toFixed(1)),
+      waste: Number((BASELINE_WASTE - wasteSavings).toFixed(1))
     }
   };
 };
+

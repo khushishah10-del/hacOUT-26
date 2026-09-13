@@ -56,7 +56,7 @@ export default function MonthlyEmissionChart({ data = MONTHLY_EMISSIONS_TREND })
             stroke="#94a3b8"
             fontSize={12}
             tickLine={false}
-            domain={[1000, 1500]}
+            domain={['auto', 'auto']}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend verticalAlign="bottom" height={36} />

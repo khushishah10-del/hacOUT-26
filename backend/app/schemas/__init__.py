@@ -9,4 +9,13 @@ from app.schemas.emission_result import (  # noqa: F401
     EmissionResultBase,
     EmissionResultResponse,
 )
+from app.schemas.ai_recommendation import (  # noqa: F401
+    AIRecommendationRequest,
+    RecommendationPayload,
+    AIRecommendationResponse,
+)
+from app.schemas.recommendation import (  # noqa: F401
+    RecommendationCreate,
+    RecommendationResponse,
+)
 

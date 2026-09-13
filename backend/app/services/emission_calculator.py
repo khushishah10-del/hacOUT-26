@@ -22,8 +22,9 @@ DEMO_EMISSION_FACTORS = {
     "waste_plastic": 2.50,   # kg CO2e per kg
     "waste_metal": 1.80,     # kg CO2e per kg
     "waste_paper": 1.00,     # kg CO2e per kg
-    "waste_other": 1.20,     # kg CO2e per kg
+    "waste_other": 0.90,     # kg CO2e per kg
 }
+
 
 
 def calculate_emissions(factory_data: FactoryData) -> Dict[str, float]:

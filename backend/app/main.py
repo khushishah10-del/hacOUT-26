@@ -2,11 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import APP_NAME, APP_VERSION, CORS_ORIGINS
+from app.routes.ai_recommendations import router as ai_recommendations_router
 from app.routes.database_health import router as database_health_router
 from app.routes.emissions import router as emissions_router
 from app.routes.factories import router as factories_router
 from app.routes.factory_data import router as factory_data_router
 from app.routes.health import router as health_router
+from app.routes.recommendations import router as recommendations_router
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -30,6 +32,8 @@ app.include_router(database_health_router, prefix="/api")
 app.include_router(factories_router, prefix="/api")
 app.include_router(factory_data_router, prefix="/api")
 app.include_router(emissions_router, prefix="/api")
+app.include_router(ai_recommendations_router, prefix="/api")
+app.include_router(recommendations_router, prefix="/api")
 
 
 
